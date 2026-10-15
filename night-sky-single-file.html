@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Night Sky Sketchbook</title>
+  <style>
+:root {
+  --ink: #0e1030;
+  --deep: #1b1747;
+  --chalk: #f2ecdc;
+  --gold: #f0c987;
+  --mist: #8d94c4;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body {
+  background: radial-gradient(ellipse at 50% 110%, var(--deep), var(--ink) 70%);
+  color: var(--chalk);
+  font-family: Georgia, "Times New Roman", serif;
+}
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+header { position: fixed; left: 24px; bottom: 24px; pointer-events: none; max-width: 80vw; }
+h1 { margin: 0; font-weight: 400; font-style: italic; font-size: clamp(1.4rem, 4vw, 2.4rem); }
+#hint { margin: 6px 0 0; color: var(--mist); font-size: 0.95rem; }
+nav { position: fixed; right: 24px; top: 24px; display: flex; gap: 8px; }
+button {
+  background: transparent; color: var(--chalk);
+  border: 1px solid var(--mist); border-radius: 999px;
+  padding: 8px 16px; font: inherit; font-size: 0.9rem; cursor: pointer;
+}
+button:hover { border-color: var(--gold); color: var(--gold); }
+button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+@media (max-width: 520px) { nav { left: 24px; right: auto; flex-wrap: wrap; } }
+
+</style>
+</head>
+<body>
+  <canvas id="sky" aria-label="Night sky. Click to place stars."></canvas>
+  <header>
+    <h1 id="name">Click anywhere to place a star</h1>
+    <p id="hint">Stars near each other join into a constellation.</p>
+  </header>
+  <nav>
+    <button id="rename">Rename</button>
+    <button id="save">Save as image</button>
+    <button id="clear">Clear sky</button>
+  </nav>
+  <script>
+const canvas = document.getElementById('sky');
+const ctx = canvas.getContext('2d');
+const nameEl = document.getElementById('name');
+const hintEl = document.getElementById('hint');
+const LINK_DISTANCE = 170;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let stars = [];
+let dpr = 1;
+
+const adjectives = ['Sleepy', 'Wandering', 'Quiet', 'Restless', 'Paper', 'Hidden', 'Gentle', 'Lost', 'Borrowed', 'Silver'];
+const nouns = ['Lantern', 'Fox', 'Ferry', 'Kettle', 'Heron', 'Compass', 'Teacup', 'Harbor', 'Moth', 'Bridge'];
+const pick = list => list[Math.floor(Math.random() * list.length)];
+const makeName = () => `The ${pick(adjectives)} ${pick(nouns)}`;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  canvas.width = innerWidth * dpr;
+  canvas.height = innerHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize);
+resize();
+
+function addStar(x, y) {
+  stars.push({ x, y, r: 1.5 + Math.random() * 2.5, phase: Math.random() * Math.PI * 2, born: performance.now() });
+  nameEl.textContent = makeName();
+  hintEl.textContent = `${stars.length} star${stars.length === 1 ? '' : 's'} placed`;
+}
+
+document.addEventListener('pointerdown', e => { if (!e.target.closest('nav')) addStar(e.clientX, e.clientY); });
+
+// A few background stars so the sky is never empty
+const dust = Array.from({ length: 120 }, () => ({
+  x: Math.random(), y: Math.random(), r: Math.random() * 1.1, phase: Math.random() * 6.28
+}));
+
+function draw(t) {
+  ctx.clearRect(0, 0, innerWidth, innerHeight);
+
+  for (const d of dust) {
+    const a = 0.25 + 0.25 * Math.sin(t / 1200 + d.phase);
+    ctx.fillStyle = `rgba(242,236,220,${reduceMotion ? 0.35 : a})`;
+    ctx.beginPath();
+    ctx.arc(d.x * innerWidth, d.y * innerHeight, d.r, 0, 6.283);
+    ctx.fill();
+  }
+
+  // Lines between nearby stars, fading with distance
+  ctx.lineWidth = 1;
+  for (let i = 0; i < stars.length; i++) {
+    for (let j = i + 1; j < stars.length; j++) {
+      const dx = stars[i].x - stars[j].x, dy = stars[i].y - stars[j].y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < LINK_DISTANCE) {
+        ctx.strokeStyle = `rgba(240,201,135,${(1 - dist / LINK_DISTANCE) * 0.8})`;
+        ctx.beginPath();
+        ctx.moveTo(stars[i].x, stars[i].y);
+        ctx.lineTo(stars[j].x, stars[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  for (const s of stars) {
+    const twinkle = reduceMotion ? 1 : 0.8 + 0.2 * Math.sin(t / 500 + s.phase);
+    const pop = Math.min(1, (t - s.born) / 400);       // new stars swell in
+    const r = s.r * twinkle * (0.4 + 0.6 * pop);
+    const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r * 7);
+    glow.addColorStop(0, 'rgba(240,201,135,0.55)');
+    glow.addColorStop(1, 'rgba(240,201,135,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(s.x, s.y, r * 7, 0, 6.283); ctx.fill();
+    ctx.fillStyle = '#f2ecdc';
+    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, 6.283); ctx.fill();
+  }
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+document.getElementById('rename').onclick = () => { if (stars.length) nameEl.textContent = makeName(); };
+document.getElementById('clear').onclick = () => {
+  stars = [];
+  nameEl.textContent = 'Click anywhere to place a star';
+  hintEl.textContent = 'Stars near each other join into a constellation.';
+};
+document.getElementById('save').onclick = () => {
+  const out = document.createElement('canvas');
+  out.width = canvas.width; out.height = canvas.height;
+  const o = out.getContext('2d');
+  const bg = o.createRadialGradient(out.width / 2, out.height * 1.1, 0, out.width / 2, out.height * 1.1, out.height);
+  bg.addColorStop(0, '#1b1747'); bg.addColorStop(0.7, '#0e1030');
+  o.fillStyle = bg; o.fillRect(0, 0, out.width, out.height);
+  o.drawImage(canvas, 0, 0);
+  o.fillStyle = '#f2ecdc';
+  o.font = `italic ${28 * dpr}px Georgia, serif`;
+  o.fillText(nameEl.textContent, 24 * dpr, out.height - 24 * dpr);
+  const a = document.createElement('a');
+  a.download = 'my-constellation.png';
+  a.href = out.toDataURL('image/png');
+  a.click();
+};
+
+</script>
+</body>
+</html>
